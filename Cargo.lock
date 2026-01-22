@@ -607,6 +607,8 @@ dependencies = [
  "anyhow",
  "clap",
  "duckdb",
+ "serde",
+ "serde_json",
  "sqllogictest",
 ]
 
