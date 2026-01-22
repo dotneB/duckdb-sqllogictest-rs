@@ -1,0 +1,4 @@
+query I my_record
+SELECT 1;
+----
+2

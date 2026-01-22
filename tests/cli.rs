@@ -74,6 +74,17 @@ fn mismatch_exits_2() {
 }
 
 #[test]
+fn mismatch_output_includes_record_and_sql() {
+    let out = bin().arg(fixture("fail_labeled.slt")).output().unwrap();
+    assert_exit_code(&out, 2);
+
+    let stderr = String::from_utf8(out.stderr).unwrap();
+    assert!(stderr.contains("record:"));
+    assert!(stderr.contains("name=my_record"));
+    assert!(stderr.contains("SELECT 1;"));
+}
+
+#[test]
 fn invalid_path_exits_1() {
     let out = bin().arg(fixture("does-not-exist.slt")).output().unwrap();
     assert_exit_code(&out, 1);
@@ -83,22 +94,6 @@ fn invalid_path_exits_1() {
 fn help_exits_0() {
     let out = bin().arg("--help").output().unwrap();
     assert_exit_0(&out);
-}
-
-#[test]
-fn json_output_is_valid() {
-    let out = bin()
-        .args(["--format", "json", &fixture("pass.slt")])
-        .output()
-        .unwrap();
-    assert_exit_0(&out);
-
-    let stdout = String::from_utf8(out.stdout).unwrap();
-    let v: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
-
-    assert!(v.get("status").is_some());
-    assert_eq!(v.get("exit_code").unwrap().as_u64(), Some(0));
-    assert!(v.get("counts").is_some());
 }
 
 #[test]

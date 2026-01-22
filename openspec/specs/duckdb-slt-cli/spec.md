@@ -11,10 +11,9 @@ The system SHALL provide a stable CLI for the `duckdb-slt` binary with the follo
 - `--extensions <EXT>` / `-e <EXT>`: zero or more extension specs; may be repeated.
 - `--workdir <DIR>` / `-w <DIR>`: base working directory for resolving relative paths.
 - `--fail-fast` / `--no-fail-fast`: toggle whether execution stops after the first test mismatch.
-- `--format <text|json>`: select output format.
 - `<FILES...>`: one or more sqllogictest input files or glob patterns to execute.
 
-The system SHALL default `--format` to `text` and SHALL default `fail-fast` behavior to enabled.
+The system SHALL default `fail-fast` behavior to enabled.
 
 When `--workdir` is provided, the system SHALL resolve relative paths (including `<FILES...>` and `--db <PATH>`) using `--workdir` as the base.
 
@@ -69,24 +68,6 @@ The system SHALL support extension actions prior to running tests.
 - **WHEN** a user runs `duckdb-slt -e json test.slt`
 - **THEN** the system executes `INSTALL json; LOAD json` prior to running tests
 
-### Requirement: Output Formats
-The system SHALL support `--format text` and `--format json`.
-
-When `--format json` is selected, the system SHALL write a single JSON document to stdout that includes:
-- `status`: `"pass" | "fail" | "error"`
-- `exit_code`: `0 | 1 | 2`
-- `counts`: `{ files_total, files_passed, files_failed, files_errored }`
-
-In JSON mode, any human-readable diagnostics SHALL be written to stderr.
-
-#### Scenario: User uses text output
-- **WHEN** a user runs the CLI without specifying `--format`
-- **THEN** the system prints human-readable progress and failures
-
-#### Scenario: User uses JSON output
-- **WHEN** a user runs `duckdb-slt --format json ...`
-- **THEN** the system emits a machine-readable JSON document to stdout summarizing the run
-
 ### Requirement: Stable Exit Codes
 The system SHALL use the following exit codes:
 
@@ -101,6 +82,10 @@ The system SHALL use the following exit codes:
 #### Scenario: A test mismatch occurs
 - **WHEN** a mismatch occurs between expected and actual results
 - **THEN** the process exits with code `2`
+
+#### Scenario: Mismatch with no-fail-fast still exits 2
+- **WHEN** a mismatch occurs and `--no-fail-fast` is enabled
+- **THEN** the process exits with code `2` after attempting remaining files
 
 #### Scenario: A runtime error occurs
 - **WHEN** the system encounters an error that prevents correct execution (such as an unreadable input file)
@@ -186,4 +171,20 @@ The system SHALL escape single quotes inside generated SQL string literals.
 #### Scenario: Escape single quotes in local extension path
 - **WHEN** a user passes `--extensions path/with'quote/ext.duckdb_extension`
 - **THEN** the generated SQL escapes the single quote within the string literal
+
+### Requirement: Mismatch Failure Diagnostics
+When an expectation mismatch occurs while running `duckdb-slt`, the system SHALL write a human-readable failure report to stderr that includes:
+- the input file path
+- a record identifier (record index; and record name when available)
+- the SQL statement (or a recognizable snippet of it)
+- the expected output
+- the actual output
+
+#### Scenario: Query mismatch prints file, record identifier, and SQL
+- **WHEN** a query record mismatches between expected and actual output
+- **THEN** stderr includes the file path, the record identifier, and the SQL statement for the failing record
+
+#### Scenario: Statement mismatch prints expected vs actual
+- **WHEN** a statement record mismatches due to an unexpected error or unexpected success
+- **THEN** stderr includes both the expected outcome and the actual outcome
 

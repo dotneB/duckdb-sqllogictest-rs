@@ -5,11 +5,10 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::{Context, Result};
-use clap::{ArgAction, Parser, ValueEnum, error::ErrorKind};
+use clap::{ArgAction, Parser, error::ErrorKind};
 use duckdb::{Config, Connection};
-use serde::Serialize;
-use sqllogictest::Runner;
 use sqllogictest::runner::TestErrorKind;
+use sqllogictest::{QueryExpect, Record, Runner};
 
 use crate::duckdb_driver::DuckdbDriver;
 use crate::extensions::ExtensionActions;
@@ -17,12 +16,6 @@ use crate::extensions::ExtensionActions;
 const EXIT_OK: u8 = 0;
 const EXIT_RUNTIME_ERROR: u8 = 1;
 const EXIT_TEST_FAIL: u8 = 2;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-enum OutputFormat {
-    Text,
-    Json,
-}
 
 #[derive(Parser, Debug)]
 #[command(name = "duckdb-slt", about = "DuckDB sqllogictest runner", version)]
@@ -51,43 +44,9 @@ struct Cli {
     #[arg(long = "no-fail-fast", action = ArgAction::SetTrue)]
     no_fail_fast: bool,
 
-    /// Output format.
-    #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
-    format: OutputFormat,
-
     /// One or more sqllogictest input files.
     #[arg(value_name = "FILES", required = true)]
     files: Vec<PathBuf>,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-enum RunStatus {
-    Pass,
-    Fail,
-    Error,
-}
-
-#[derive(Debug, Serialize)]
-struct JsonCounts {
-    files_total: usize,
-    files_passed: usize,
-    files_failed: usize,
-    files_errored: usize,
-}
-
-#[derive(Debug, Serialize)]
-struct JsonFileResult {
-    path: String,
-    status: RunStatus,
-}
-
-#[derive(Debug, Serialize)]
-struct JsonSummary {
-    status: RunStatus,
-    exit_code: u8,
-    files: Vec<JsonFileResult>,
-    counts: JsonCounts,
 }
 
 fn main() -> ExitCode {
@@ -132,93 +91,66 @@ fn run(cli: Cli) -> Result<u8> {
         .map(|p| normalize_path(&p))
         .collect::<Result<Vec<_>>>()?;
 
-    let mut results: Vec<JsonFileResult> = Vec::with_capacity(files.len());
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum FileStatus {
+        Pass,
+        Fail,
+        Error,
+    }
+
+    let mut results: Vec<(FileStatus, String)> = Vec::new();
+    let mut files_total = 0usize;
+    let mut files_passed = 0usize;
+    let mut files_failed = 0usize;
+    let mut files_errored = 0usize;
 
     for path in files {
+        files_total += 1;
         let res = run_one_file(&cli, &path);
         match res {
             Ok(()) => {
-                results.push(JsonFileResult {
-                    path: path.display().to_string(),
-                    status: RunStatus::Pass,
-                });
+                files_passed += 1;
+                results.push((FileStatus::Pass, path.display().to_string()));
             }
             Err(FileRunError::TestFailure(e)) => {
-                if cli.format == OutputFormat::Text {
-                    eprintln!("{e}");
-                }
-                results.push(JsonFileResult {
-                    path: path.display().to_string(),
-                    status: RunStatus::Fail,
-                });
+                eprintln!("{e}");
+                files_failed += 1;
+                results.push((FileStatus::Fail, path.display().to_string()));
 
                 if fail_fast {
                     break;
                 }
             }
             Err(FileRunError::Runtime(e)) => {
-                if cli.format == OutputFormat::Text {
-                    eprintln!("{e:?}");
-                }
-                results.push(JsonFileResult {
-                    path: path.display().to_string(),
-                    status: RunStatus::Error,
-                });
+                eprintln!("{e:?}");
+                files_errored += 1;
+                results.push((FileStatus::Error, path.display().to_string()));
                 // Runtime errors are not recoverable for a single run.
                 break;
             }
         }
     }
 
-    let counts = JsonCounts {
-        files_total: results.len(),
-        files_passed: results
-            .iter()
-            .filter(|f| f.status == RunStatus::Pass)
-            .count(),
-        files_failed: results
-            .iter()
-            .filter(|f| f.status == RunStatus::Fail)
-            .count(),
-        files_errored: results
-            .iter()
-            .filter(|f| f.status == RunStatus::Error)
-            .count(),
-    };
-
-    let (status, exit_code) = if counts.files_errored > 0 {
-        (RunStatus::Error, EXIT_RUNTIME_ERROR)
-    } else if counts.files_failed > 0 {
-        (RunStatus::Fail, EXIT_TEST_FAIL)
+    let exit_code = if files_errored > 0 {
+        EXIT_RUNTIME_ERROR
+    } else if files_failed > 0 {
+        EXIT_TEST_FAIL
     } else {
-        (RunStatus::Pass, EXIT_OK)
+        EXIT_OK
     };
 
-    match cli.format {
-        OutputFormat::Text => {
-            for f in &results {
-                let label = match f.status {
-                    RunStatus::Pass => "PASS",
-                    RunStatus::Fail => "FAIL",
-                    RunStatus::Error => "ERROR",
-                };
-                println!("{label} {}", f.path);
-            }
-            println!(
-                "files: total={} passed={} failed={} errored={}",
-                counts.files_total, counts.files_passed, counts.files_failed, counts.files_errored
-            );
-        }
-        OutputFormat::Json => {
-            let summary = JsonSummary {
-                status,
-                exit_code,
-                files: results,
-                counts,
-            };
-            println!("{}", serde_json::to_string(&summary)?);
-        }
+    for (status, path) in &results {
+        let label = match status {
+            FileStatus::Pass => "PASS",
+            FileStatus::Fail => "FAIL",
+            FileStatus::Error => "ERROR",
+        };
+        println!("{label} {path}");
     }
+    println!(
+        "files: total={} passed={} failed={} errored={}",
+        files_total, files_passed, files_failed, files_errored
+    );
 
     Ok(exit_code)
 }
@@ -283,6 +215,161 @@ enum FileRunError {
     Runtime(anyhow::Error),
 }
 
+#[derive(Debug, Clone)]
+struct RecordId {
+    index_1_based: usize,
+    name: Option<String>,
+}
+
+fn find_record_id(main_file: &Path, loc: &sqllogictest::Location) -> Option<RecordId> {
+    let file_hint = PathBuf::from(loc.file());
+    let candidate = if file_hint.is_absolute() {
+        file_hint
+    } else {
+        main_file
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join(file_hint)
+    };
+
+    let records = sqllogictest::parse_file::<sqllogictest::DefaultColumnType>(&candidate).ok()?;
+    let mut index = 0usize;
+
+    for r in records {
+        match r {
+            Record::Statement { loc: rloc, .. } => {
+                index += 1;
+                if rloc.file() == loc.file() && rloc.line() == loc.line() {
+                    return Some(RecordId {
+                        index_1_based: index,
+                        name: None,
+                    });
+                }
+            }
+            Record::System { loc: rloc, .. } => {
+                index += 1;
+                if rloc.file() == loc.file() && rloc.line() == loc.line() {
+                    return Some(RecordId {
+                        index_1_based: index,
+                        name: None,
+                    });
+                }
+            }
+            Record::Query {
+                loc: rloc,
+                expected,
+                ..
+            } => {
+                index += 1;
+                if rloc.file() == loc.file() && rloc.line() == loc.line() {
+                    let name = match expected {
+                        QueryExpect::Results { label, .. } => label,
+                        QueryExpect::Error(_) => None,
+                    };
+                    return Some(RecordId {
+                        index_1_based: index,
+                        name,
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+
+    None
+}
+
+fn render_failure_report(main_file: &Path, test_err: &sqllogictest::TestError) -> String {
+    use std::fmt::Write;
+
+    let kind = test_err.kind();
+    let loc = test_err.location();
+    let record_id = find_record_id(main_file, &loc);
+
+    let mut out = String::new();
+
+    writeln!(out, "test mismatch").expect("writing to String should not fail");
+    writeln!(out, "file: {}", loc.file()).expect("writing to String should not fail");
+    writeln!(out, "at: {loc}").expect("writing to String should not fail");
+    if let Some(id) = &record_id {
+        writeln!(
+            out,
+            "record: {}{}",
+            id.index_1_based,
+            id.name
+                .as_deref()
+                .map(|n| format!(" name={n}"))
+                .unwrap_or_default()
+        )
+        .expect("writing to String should not fail");
+    }
+
+    let sql = match &kind {
+        TestErrorKind::Ok { sql, .. }
+        | TestErrorKind::Fail { sql, .. }
+        | TestErrorKind::ErrorMismatch { sql, .. }
+        | TestErrorKind::StatementResultMismatch { sql, .. }
+        | TestErrorKind::QueryResultMismatch { sql, .. }
+        | TestErrorKind::QueryResultColumnsMismatch { sql, .. } => Some(sql.as_str()),
+        TestErrorKind::ParseError(_)
+        | TestErrorKind::SystemFail { .. }
+        | TestErrorKind::SystemStdoutMismatch { .. } => None,
+        _ => None,
+    };
+
+    if let Some(sql) = sql {
+        writeln!(out, "sql:\n{sql}").expect("writing to String should not fail");
+    }
+
+    match &kind {
+        TestErrorKind::QueryResultMismatch {
+            expected, actual, ..
+        } => {
+            writeln!(out, "expected:\n{expected}").expect("writing to String should not fail");
+            writeln!(out, "actual:\n{actual}").expect("writing to String should not fail");
+        }
+        TestErrorKind::QueryResultColumnsMismatch {
+            expected, actual, ..
+        } => {
+            writeln!(out, "expected_columns: {expected}")
+                .expect("writing to String should not fail");
+            writeln!(out, "actual_columns: {actual}").expect("writing to String should not fail");
+        }
+        TestErrorKind::ErrorMismatch {
+            expected_err,
+            err,
+            actual_sqlstate,
+            ..
+        } => {
+            writeln!(out, "expected_error: {expected_err}")
+                .expect("writing to String should not fail");
+            if let Some(sqlstate) = actual_sqlstate {
+                writeln!(out, "actual_sqlstate: {sqlstate}")
+                    .expect("writing to String should not fail");
+            }
+            writeln!(out, "actual_error: {err}").expect("writing to String should not fail");
+        }
+        TestErrorKind::StatementResultMismatch {
+            expected, actual, ..
+        } => {
+            writeln!(out, "expected_rows: {expected}").expect("writing to String should not fail");
+            writeln!(out, "actual_rows: {actual}").expect("writing to String should not fail");
+        }
+        TestErrorKind::Ok { .. }
+        | TestErrorKind::Fail { .. }
+        | TestErrorKind::SystemFail { .. }
+        | TestErrorKind::SystemStdoutMismatch { .. }
+        | TestErrorKind::ParseError(_)
+        | _ => {
+            // Fallback: still include the underlying library error message.
+            writeln!(out, "details: {}", test_err.display(false))
+                .expect("writing to String should not fail");
+        }
+    }
+
+    out.trim_end_matches('\n').to_string()
+}
+
 fn run_one_file(cli: &Cli, path: &Path) -> std::result::Result<(), FileRunError> {
     if !path.exists() {
         return Err(FileRunError::Runtime(anyhow::anyhow!(
@@ -299,8 +386,6 @@ fn run_one_file(cli: &Cli, path: &Path) -> std::result::Result<(), FileRunError>
         .map(|raw| crate::extensions::compile_extension_actions(raw))
         .collect::<Result<Vec<ExtensionActions>>>()
         .map_err(FileRunError::Runtime)?;
-    let format = cli.format;
-
     let mut runner = Runner::new(move || {
         let db = db.clone();
         let extensions = extensions.clone();
@@ -309,14 +394,10 @@ fn run_one_file(cli: &Cli, path: &Path) -> std::result::Result<(), FileRunError>
             let conn = open_duckdb_connection(db.as_deref(), allow_unsigned_extensions)?;
 
             for ext in &extensions {
-                if format == OutputFormat::Text {
-                    eprintln!("INSTALL {}", ext.display);
-                }
+                eprintln!("INSTALL {}", ext.display);
                 conn.execute_batch(&ext.install_sql)?;
 
-                if format == OutputFormat::Text {
-                    eprintln!("LOAD {}", ext.display);
-                }
+                eprintln!("LOAD {}", ext.display);
                 conn.execute_batch(&ext.load_sql)?;
             }
 
@@ -332,9 +413,9 @@ fn run_one_file(cli: &Cli, path: &Path) -> std::result::Result<(), FileRunError>
                 path.display(),
                 test_err.display(false)
             ))),
-            _ => Err(FileRunError::TestFailure(
-                test_err.display(false).to_string(),
-            )),
+            _ => Err(FileRunError::TestFailure(render_failure_report(
+                path, &test_err,
+            ))),
         },
     }
 }

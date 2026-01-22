@@ -609,8 +609,6 @@ dependencies = [
  "clap",
  "duckdb",
  "glob",
- "serde",
- "serde_json",
  "sqllogictest",
 ]
 
