@@ -605,6 +605,7 @@ name = "duckdb-slt"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "arrow-schema",
  "clap",
  "duckdb",
  "serde",

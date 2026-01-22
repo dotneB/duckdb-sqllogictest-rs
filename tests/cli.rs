@@ -41,6 +41,27 @@ fn pass_exits_0() {
 }
 
 #[test]
+fn canonical_values_pass() {
+    let out = bin().arg(fixture("canonical_values.slt")).output().unwrap();
+    assert_exit_0(&out);
+}
+
+#[test]
+fn zero_rows_query_pass() {
+    let out = bin().arg(fixture("zero_rows.slt")).output().unwrap();
+    assert_exit_0(&out);
+}
+
+#[test]
+fn statement_returning_rows_pass() {
+    let out = bin()
+        .arg(fixture("statement_returning_rows.slt"))
+        .output()
+        .unwrap();
+    assert_exit_0(&out);
+}
+
+#[test]
 fn mismatch_exits_2() {
     let out = bin().arg(fixture("fail.slt")).output().unwrap();
     assert_exit_code(&out, 2);
