@@ -12,6 +12,12 @@ fn fixture(name: &str) -> String {
     path.to_string_lossy().to_string()
 }
 
+fn fixtures_dir() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("fixtures")
+}
+
 fn assert_exit_0(out: &Output) {
     assert_exit_code(out, 0);
 }
@@ -202,5 +208,15 @@ fn extensions_can_install_from_core_and_core_nightly() {
         .output()
         .unwrap();
 
+    assert_exit_0(&out);
+}
+
+#[test]
+fn glob_expands_files_and_runs_each() {
+    let pattern = fixtures_dir()
+        .join("pass*.slt")
+        .to_string_lossy()
+        .to_string();
+    let out = bin().arg(pattern).output().unwrap();
     assert_exit_0(&out);
 }

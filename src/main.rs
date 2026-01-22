@@ -127,10 +127,9 @@ fn run(cli: Cli) -> Result<u8> {
     } else {
         cli.fail_fast
     };
-    let files = cli
-        .files
-        .iter()
-        .map(|p| normalize_path(p))
+    let files = expand_files(&cli.files)?
+        .into_iter()
+        .map(|p| normalize_path(&p))
         .collect::<Result<Vec<_>>>()?;
 
     let mut results: Vec<JsonFileResult> = Vec::with_capacity(files.len());
@@ -222,6 +221,51 @@ fn run(cli: Cli) -> Result<u8> {
     }
 
     Ok(exit_code)
+}
+
+fn expand_files(files: &[PathBuf]) -> Result<Vec<PathBuf>> {
+    let mut out: Vec<PathBuf> = Vec::new();
+
+    for p in files {
+        if looks_like_glob_pattern(p) {
+            let pattern = normalize_glob_pattern(p);
+            let mut matches: Vec<PathBuf> = glob::glob(&pattern)
+                .with_context(|| format!("invalid glob pattern: {pattern}"))?
+                .map(|res| res.with_context(|| format!("failed to expand glob: {pattern}")))
+                .collect::<Result<Vec<_>>>()?;
+
+            matches.sort_by(|a, b| a.to_string_lossy().cmp(&b.to_string_lossy()));
+
+            if matches.is_empty() {
+                anyhow::bail!("glob pattern matched no files: {pattern}");
+            }
+
+            out.extend(matches);
+        } else {
+            out.push(p.clone());
+        }
+    }
+
+    Ok(out)
+}
+
+fn looks_like_glob_pattern(path: &Path) -> bool {
+    let s = path.to_string_lossy();
+    s.contains('*')
+        || s.contains('?')
+        || s.contains('[')
+        || s.contains(']')
+        || s.contains('{')
+        || s.contains('}')
+}
+
+fn normalize_glob_pattern(path: &Path) -> String {
+    let s = path.to_string_lossy();
+    if cfg!(windows) {
+        s.replace('\\', "/")
+    } else {
+        s.to_string()
+    }
 }
 
 fn normalize_path(path: &Path) -> Result<PathBuf> {
