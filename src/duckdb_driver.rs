@@ -4,6 +4,51 @@ use duckdb::{Connection, Error};
 use sqllogictest::runner::DBOutput;
 use sqllogictest::{DB, DefaultColumnType};
 
+fn normalize_duckdb_error_message(msg: &str) -> Option<String> {
+    // DuckDB (and host OSes) often include environment-specific details in I/O errors.
+    // Normalize known-unstable variants into stable strings suitable for sqllogictest.
+    if msg.contains("Failed to open file") {
+        return Some("Failed to open file".to_string());
+    }
+
+    None
+}
+
+#[derive(Debug)]
+pub enum DuckdbDriverError {
+    Duckdb(Error),
+    Normalized { display: String, source: Error },
+}
+
+impl std::fmt::Display for DuckdbDriverError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DuckdbDriverError::Duckdb(e) => std::fmt::Display::fmt(e, f),
+            DuckdbDriverError::Normalized { display, .. } => f.write_str(display),
+        }
+    }
+}
+
+impl std::error::Error for DuckdbDriverError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            DuckdbDriverError::Duckdb(e) => Some(e),
+            DuckdbDriverError::Normalized { source, .. } => Some(source),
+        }
+    }
+}
+
+impl From<Error> for DuckdbDriverError {
+    fn from(e: Error) -> Self {
+        let msg = e.to_string();
+        if let Some(display) = normalize_duckdb_error_message(&msg) {
+            return DuckdbDriverError::Normalized { display, source: e };
+        }
+
+        DuckdbDriverError::Duckdb(e)
+    }
+}
+
 pub struct DuckdbDriver {
     conn: Connection,
 }
@@ -176,7 +221,7 @@ impl DuckdbDriver {
 }
 
 impl DB for DuckdbDriver {
-    type Error = Error;
+    type Error = DuckdbDriverError;
     type ColumnType = DefaultColumnType;
 
     fn run(&mut self, sql: &str) -> Result<DBOutput<Self::ColumnType>, Self::Error> {
@@ -186,13 +231,15 @@ impl DB for DuckdbDriver {
             Ok(rows_changed) => {
                 let has_result_set = stmt.column_count() > 0;
                 if has_result_set {
-                    Self::collect_rows(&mut stmt)
+                    Self::collect_rows(&mut stmt).map_err(Into::into)
                 } else {
                     Ok(DBOutput::StatementComplete(rows_changed as u64))
                 }
             }
-            Err(Error::ExecuteReturnedResults) => Self::collect_rows_via_query(&mut stmt),
-            Err(e) => Err(e),
+            Err(Error::ExecuteReturnedResults) => {
+                Self::collect_rows_via_query(&mut stmt).map_err(Into::into)
+            }
+            Err(e) => Err(e.into()),
         }
     }
 }
@@ -200,6 +247,26 @@ impl DB for DuckdbDriver {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn normalize_duckdb_error_message_table() {
+        let cases: &[(&str, Option<&str>)] = &[
+            (
+                "Invalid Input Error: Failed to open file 'x': The system cannot find the file specified. (os error 2)",
+                Some("Failed to open file"),
+            ),
+            (
+                "IO Error: Failed to open file 'x': Permission denied",
+                Some("Failed to open file"),
+            ),
+            ("Catalog Error: Table with name t does not exist", None),
+        ];
+
+        for (input, expected) in cases {
+            let actual = normalize_duckdb_error_message(input);
+            assert_eq!(actual.as_deref(), *expected);
+        }
+    }
 
     #[test]
     fn map_duckdb_types() {

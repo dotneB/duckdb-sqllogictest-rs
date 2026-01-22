@@ -1,6 +1,7 @@
 mod duckdb_driver;
 mod extensions;
 
+use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -37,12 +38,8 @@ struct Cli {
     workdir: Option<PathBuf>,
 
     /// Stop after the first test mismatch.
-    #[arg(long, default_value_t = true, action = ArgAction::SetTrue)]
+    #[arg(long, default_value_t = false, action = ArgAction::SetTrue)]
     fail_fast: bool,
-
-    /// Continue running remaining files after a mismatch.
-    #[arg(long = "no-fail-fast", action = ArgAction::SetTrue)]
-    no_fail_fast: bool,
 
     /// One or more sqllogictest input files.
     #[arg(value_name = "FILES", required = true)]
@@ -81,54 +78,65 @@ fn run(cli: Cli) -> Result<u8> {
             .with_context(|| format!("failed to set workdir: {}", workdir.display()))?;
     }
 
-    let fail_fast = if cli.no_fail_fast {
-        false
-    } else {
-        cli.fail_fast
-    };
+    let base_dir = std::env::current_dir()?;
+
     let files = expand_files(&cli.files)?
         .into_iter()
         .map(|p| normalize_path(&p))
         .collect::<Result<Vec<_>>>()?;
 
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    enum FileStatus {
-        Pass,
-        Fail,
-        Error,
-    }
+    println!("running {} tests", files.len());
+    let started = std::time::Instant::now();
+    let use_color = std::io::stdout().is_terminal();
 
-    let mut results: Vec<(FileStatus, String)> = Vec::new();
-    let mut files_total = 0usize;
     let mut files_passed = 0usize;
     let mut files_failed = 0usize;
     let mut files_errored = 0usize;
 
+    let mut failed_files: Vec<String> = Vec::new();
+    let mut errored_files: Vec<String> = Vec::new();
+
     for path in files {
-        files_total += 1;
-        let res = run_one_file(&cli, &path);
+        let display_path = format_user_path(&base_dir, &path);
+        let res = run_one_file(&cli, &base_dir, &path);
         match res {
             Ok(()) => {
                 files_passed += 1;
-                results.push((FileStatus::Pass, path.display().to_string()));
+                println!("test {display_path} ... {}", format_ok(use_color));
             }
             Err(FileRunError::TestFailure(e)) => {
-                eprintln!("{e}");
                 files_failed += 1;
-                results.push((FileStatus::Fail, path.display().to_string()));
+                failed_files.push(display_path.clone());
+                println!("test {display_path} ... {}", format_failed(use_color));
+                // Ensure the FAILED line is emitted before the detailed report.
+                let _ = std::io::stdout().flush();
+                eprintln!("{e}");
 
-                if fail_fast {
+                if cli.fail_fast {
                     break;
                 }
             }
             Err(FileRunError::Runtime(e)) => {
-                eprintln!("{e:?}");
                 files_errored += 1;
-                results.push((FileStatus::Error, path.display().to_string()));
+                errored_files.push(display_path.clone());
+                println!("test {display_path} ... {}", format_error(use_color));
+                let _ = std::io::stdout().flush();
+                eprintln!("{e:?}");
                 // Runtime errors are not recoverable for a single run.
                 break;
             }
         }
+    }
+
+    if !failed_files.is_empty() || !errored_files.is_empty() {
+        println!("\nfailures:\n");
+        for f in &failed_files {
+            println!("    {f}");
+        }
+        for f in &errored_files {
+            println!("    {f}");
+        }
+        println!();
     }
 
     let exit_code = if files_errored > 0 {
@@ -139,20 +147,37 @@ fn run(cli: Cli) -> Result<u8> {
         EXIT_OK
     };
 
-    for (status, path) in &results {
-        let label = match status {
-            FileStatus::Pass => "PASS",
-            FileStatus::Fail => "FAIL",
-            FileStatus::Error => "ERROR",
-        };
-        println!("{label} {path}");
-    }
+    let status = if files_failed == 0 && files_errored == 0 {
+        format_ok(use_color)
+    } else {
+        format_failed(use_color)
+    };
     println!(
-        "files: total={} passed={} failed={} errored={}",
-        files_total, files_passed, files_failed, files_errored
+        "test result: {status}. {files_passed} passed; {files_failed} failed; {files_errored} errored; 0 ignored; 0 measured; 0 filtered out; finished in {:.2}s",
+        started.elapsed().as_secs_f64()
     );
 
     Ok(exit_code)
+}
+
+fn format_ok(use_color: bool) -> &'static str {
+    if use_color { "\x1b[32mok\x1b[0m" } else { "ok" }
+}
+
+fn format_failed(use_color: bool) -> &'static str {
+    if use_color {
+        "\x1b[31mFAILED\x1b[0m"
+    } else {
+        "FAILED"
+    }
+}
+
+fn format_error(use_color: bool) -> &'static str {
+    if use_color {
+        "\x1b[31mERROR\x1b[0m"
+    } else {
+        "ERROR"
+    }
 }
 
 fn expand_files(files: &[PathBuf]) -> Result<Vec<PathBuf>> {
@@ -208,6 +233,22 @@ fn normalize_path(path: &Path) -> Result<PathBuf> {
     };
 
     Ok(path)
+}
+
+fn format_user_path(base_dir: &Path, path: &Path) -> String {
+    path.strip_prefix(base_dir)
+        .unwrap_or(path)
+        .display()
+        .to_string()
+}
+
+fn format_user_path_str(base_dir: &Path, raw: &str) -> String {
+    let p = Path::new(raw);
+    if p.is_absolute() {
+        format_user_path(base_dir, p)
+    } else {
+        raw.replace(['/', '\\'], std::path::MAIN_SEPARATOR_STR)
+    }
 }
 
 enum FileRunError {
@@ -279,7 +320,11 @@ fn find_record_id(main_file: &Path, loc: &sqllogictest::Location) -> Option<Reco
     None
 }
 
-fn render_failure_report(main_file: &Path, test_err: &sqllogictest::TestError) -> String {
+fn render_failure_report(
+    main_file: &Path,
+    base_dir: &Path,
+    test_err: &sqllogictest::TestError,
+) -> String {
     use std::fmt::Write;
 
     let kind = test_err.kind();
@@ -288,13 +333,20 @@ fn render_failure_report(main_file: &Path, test_err: &sqllogictest::TestError) -
 
     let mut out = String::new();
 
-    writeln!(out, "test mismatch").expect("writing to String should not fail");
-    writeln!(out, "file: {}", loc.file()).expect("writing to String should not fail");
-    writeln!(out, "at: {loc}").expect("writing to String should not fail");
+    // writeln!(out, "test mismatch").expect("writing to String should not fail");
+    // writeln!(out, "file: {}", format_user_path(base_dir, main_file))
+    //     .expect("writing to String should not fail");
+    writeln!(
+        out,
+        "  at: {}:{}",
+        format_user_path_str(base_dir, loc.file()),
+        loc.line()
+    )
+    .expect("writing to String should not fail");
     if let Some(id) = &record_id {
         writeln!(
             out,
-            "record: {}{}",
+            "  record: {}{}",
             id.index_1_based,
             id.name
                 .as_deref()
@@ -325,8 +377,8 @@ fn render_failure_report(main_file: &Path, test_err: &sqllogictest::TestError) -
         TestErrorKind::QueryResultMismatch {
             expected, actual, ..
         } => {
-            writeln!(out, "expected:\n{expected}").expect("writing to String should not fail");
-            writeln!(out, "actual:\n{actual}").expect("writing to String should not fail");
+            writeln!(out, "expected: {expected}").expect("writing to String should not fail");
+            writeln!(out, "actual: {actual}").expect("writing to String should not fail");
         }
         TestErrorKind::QueryResultColumnsMismatch {
             expected, actual, ..
@@ -370,7 +422,7 @@ fn render_failure_report(main_file: &Path, test_err: &sqllogictest::TestError) -
     out.trim_end_matches('\n').to_string()
 }
 
-fn run_one_file(cli: &Cli, path: &Path) -> std::result::Result<(), FileRunError> {
+fn run_one_file(cli: &Cli, base_dir: &Path, path: &Path) -> std::result::Result<(), FileRunError> {
     if !path.exists() {
         return Err(FileRunError::Runtime(anyhow::anyhow!(
             "file does not exist: {}",
@@ -394,10 +446,7 @@ fn run_one_file(cli: &Cli, path: &Path) -> std::result::Result<(), FileRunError>
             let conn = open_duckdb_connection(db.as_deref(), allow_unsigned_extensions)?;
 
             for ext in &extensions {
-                eprintln!("INSTALL {}", ext.display);
                 conn.execute_batch(&ext.install_sql)?;
-
-                eprintln!("LOAD {}", ext.display);
                 conn.execute_batch(&ext.load_sql)?;
             }
 
@@ -414,7 +463,7 @@ fn run_one_file(cli: &Cli, path: &Path) -> std::result::Result<(), FileRunError>
                 test_err.display(false)
             ))),
             _ => Err(FileRunError::TestFailure(render_failure_report(
-                path, &test_err,
+                path, base_dir, &test_err,
             ))),
         },
     }

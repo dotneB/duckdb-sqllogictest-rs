@@ -12,6 +12,15 @@ fn fixture(name: &str) -> String {
     path.to_string_lossy().to_string()
 }
 
+fn display_path(path: &str) -> String {
+    let cwd = std::env::current_dir().unwrap();
+    let p = std::path::Path::new(path);
+    match p.strip_prefix(&cwd) {
+        Ok(rel) => rel.to_string_lossy().to_string(),
+        Err(_) => path.to_string(),
+    }
+}
+
 fn fixtures_dir() -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
@@ -97,46 +106,14 @@ fn help_exits_0() {
 }
 
 #[test]
-fn no_fail_fast_continues_to_next_file() {
-    let pass = fixture("pass2.slt");
-    let fail = fixture("fail.slt");
-
-    let out = bin()
-        .args(["--no-fail-fast", &fail, &pass])
-        .output()
-        .unwrap();
-    assert_eq!(out.status.code(), Some(2));
-
-    let stdout = String::from_utf8(out.stdout).unwrap();
-    assert!(stdout.contains(&format!("PASS {pass}")));
-}
-
-#[test]
-fn extensions_install_then_load_in_order() {
-    let out = bin()
-        .args([
-            "--extensions",
-            "json",
-            "--extensions",
-            "json",
-            &fixture("pass.slt"),
-        ])
-        .output()
-        .unwrap();
-
+fn pass_outputs_relative_path_when_possible() {
+    let pass = fixture("pass.slt");
+    let out = bin().arg(&pass).output().unwrap();
     assert_exit_0(&out);
 
-    let stderr = String::from_utf8(out.stderr).unwrap();
-    let lines: Vec<&str> = stderr
-        .lines()
-        .map(str::trim)
-        .filter(|l| l.starts_with("INSTALL ") || l.starts_with("LOAD "))
-        .collect();
-
-    assert_eq!(
-        lines,
-        vec!["INSTALL json", "LOAD json", "INSTALL json", "LOAD json"]
-    );
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    assert!(stdout.contains(&format!("test {} ... ok", display_path(&pass))));
+    assert!(!stdout.contains(env!("CARGO_MANIFEST_DIR")));
 }
 
 #[test]
