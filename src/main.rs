@@ -1,4 +1,5 @@
 mod duckdb_driver;
+mod extensions;
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -11,6 +12,7 @@ use sqllogictest::Runner;
 use sqllogictest::runner::TestErrorKind;
 
 use crate::duckdb_driver::DuckdbDriver;
+use crate::extensions::ExtensionActions;
 
 const EXIT_OK: u8 = 0;
 const EXIT_RUNTIME_ERROR: u8 = 1;
@@ -247,7 +249,12 @@ fn run_one_file(cli: &Cli, path: &Path) -> std::result::Result<(), FileRunError>
 
     let db = cli.db.clone();
     let allow_unsigned_extensions = cli.allow_unsigned_extensions;
-    let extensions = cli.extensions.clone();
+    let extensions = cli
+        .extensions
+        .iter()
+        .map(|raw| crate::extensions::compile_extension_actions(raw))
+        .collect::<Result<Vec<ExtensionActions>>>()
+        .map_err(FileRunError::Runtime)?;
     let format = cli.format;
 
     let mut runner = Runner::new(move || {
@@ -255,26 +262,18 @@ fn run_one_file(cli: &Cli, path: &Path) -> std::result::Result<(), FileRunError>
         let extensions = extensions.clone();
 
         async move {
-            let mut config = Config::default();
-            if allow_unsigned_extensions {
-                config = config.allow_unsigned_extensions()?;
-            }
-
-            let conn = match db {
-                Some(p) => Connection::open_with_flags(p, config)?,
-                None => Connection::open_in_memory_with_flags(config)?,
-            };
+            let conn = open_duckdb_connection(db.as_deref(), allow_unsigned_extensions)?;
 
             for ext in &extensions {
                 if format == OutputFormat::Text {
-                    eprintln!("INSTALL {ext}");
+                    eprintln!("INSTALL {}", ext.display);
                 }
-                conn.execute_batch(&format!("INSTALL '{}';", escape_sql_string(ext)))?;
+                conn.execute_batch(&ext.install_sql)?;
 
                 if format == OutputFormat::Text {
-                    eprintln!("LOAD {ext}");
+                    eprintln!("LOAD {}", ext.display);
                 }
-                conn.execute_batch(&format!("LOAD '{}';", escape_sql_string(ext)))?;
+                conn.execute_batch(&ext.load_sql)?;
             }
 
             Ok(DuckdbDriver::new(conn))
@@ -296,6 +295,19 @@ fn run_one_file(cli: &Cli, path: &Path) -> std::result::Result<(), FileRunError>
     }
 }
 
-fn escape_sql_string(s: &str) -> String {
-    s.replace('\'', "''")
+fn open_duckdb_connection(
+    db: Option<&Path>,
+    allow_unsigned_extensions: bool,
+) -> duckdb::Result<Connection> {
+    let mut config = Config::default();
+    if allow_unsigned_extensions {
+        config = config.allow_unsigned_extensions()?;
+    }
+
+    let conn = match db {
+        Some(p) => Connection::open_with_flags(p, config)?,
+        None => Connection::open_in_memory_with_flags(config)?,
+    };
+
+    Ok(conn)
 }

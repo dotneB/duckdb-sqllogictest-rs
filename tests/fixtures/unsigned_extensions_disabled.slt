@@ -1,0 +1,9 @@
+query I
+SELECT CASE
+  WHEN lower(value) IN ('true', '1', 'on') THEN 1
+  ELSE 0
+END
+FROM duckdb_settings()
+WHERE name = 'allow_unsigned_extensions';
+----
+0
