@@ -1,0 +1,44 @@
+query T
+SELECT DATE '2020-01-02';
+----
+2020-01-02
+
+query T
+SELECT TIME '03:04:05.006007';
+----
+03:04:05.006007
+
+query T
+SELECT TIMESTAMP '2020-01-02 03:04:05.006007';
+----
+2020-01-02 03:04:05.006007
+
+query T
+SELECT INTERVAL '1 month 2 days 03:04:05.006007';
+----
+1 month 2 days 03:04:05.006007
+
+query R
+SELECT CAST(1.50 AS DECIMAL(4,2));
+----
+1.50
+
+query T
+SELECT [1, 2, NULL];
+----
+[1, 2, NULL]
+
+query T
+SELECT ['a', 'b', 'c'];
+----
+[a, b, c]
+
+query T
+SELECT {'a': 1, 'b': 2};
+----
+{'a': 1, 'b': 2}
+
+query T
+SELECT map(['a', 'b'], [1, 2]);
+----
+{a=1, b=2}

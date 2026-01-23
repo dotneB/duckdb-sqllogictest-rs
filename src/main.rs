@@ -26,7 +26,7 @@ struct Cli {
     db: Option<PathBuf>,
 
     /// Allow loading unsigned DuckDB extensions (risky; opt-in).
-    #[arg(long)]
+    #[arg(short = 'u', long)]
     allow_unsigned_extensions: bool,
 
     /// DuckDB extensions to enable (repeatable). Each entry runs INSTALL then LOAD.

@@ -1,24 +1,21 @@
-# duckdb-slt-driver Specification
+## ADDED Requirements
 
-## Purpose
-TBD - created by archiving change update-duckdb-driver-canonical-formatting. Update Purpose after archive.
-## Requirements
-### Requirement: DuckDB sqllogictest Driver
-The system SHALL provide a DuckDB-backed implementation of `sqllogictest::DB` used by `duckdb-slt`.
+### Requirement: Feature-Gated Advanced Type Formatting
+The driver SHALL support feature-gating nested type (list/struct/map) formatting behind a cargo feature.
 
-The driver SHALL execute input SQL and return either statement completion or query results using sqllogictest runner types.
+When the `advanced-type-formatting` feature is enabled, the driver SHALL render nested values using DuckDB-compatible stringification.
 
-#### Scenario: Driver executes a statement
-- **WHEN** the runner calls `DB::run` with a SQL statement that does not return rows
-- **THEN** the driver returns `DBOutput::StatementComplete(rows_changed)`
+When the `advanced-type-formatting` feature is disabled, the driver SHALL fall back to the pre-existing debug-oriented formatting for nested values.
 
-#### Scenario: Driver executes a query
-- **WHEN** the runner calls `DB::run` with a SQL query that returns rows
-- **THEN** the driver returns `DBOutput::Rows { types, rows }` containing all returned rows and per-column types
+#### Scenario: Nested formatting enabled
+- **WHEN** the driver is built with the `advanced-type-formatting` feature enabled and a query returns a nested value
+- **THEN** the driver renders the nested value in DuckDB-compatible string form
 
-#### Scenario: Driver distinguishes query from statement
-- **WHEN** DuckDB indicates results are available during execution (e.g., "execute returned results")
-- **THEN** the driver falls back to querying and collecting rows
+#### Scenario: Nested formatting disabled
+- **WHEN** the driver is built with the `advanced-type-formatting` feature disabled and a query returns a nested value
+- **THEN** the driver renders the nested value using its fallback (non-DuckDB-compatible) formatting
+
+## MODIFIED Requirements
 
 ### Requirement: Column Type Mapping
 The driver SHALL map DuckDB (and Arrow schema types where available) into `sqllogictest::DefaultColumnType` such that sqllogictest comparisons use stable column expectations.
@@ -66,7 +63,7 @@ The canonical formatting SHALL be:
 - Float/double -> Rust `Display` formatting (locale-independent)
 - Decimal -> DuckDB-compatible decimal string form
 - Date/time-like values (DATE, TIME, TIMESTAMP, INTERVAL) -> DuckDB-compatible string form
-- Nested values (LIST, STRUCT, MAP) -> DuckDB-compatible string form
+- Nested values (LIST, STRUCT, MAP) -> DuckDB-compatible string form (when feature-enabled)
 - Blob -> lower-case hex prefixed with `0x`
 
 DuckDB-compatible string form SHALL be defined as the result of DuckDB stringification equivalent to `CAST(value AS VARCHAR)`.
@@ -88,7 +85,7 @@ DuckDB-compatible string form SHALL be defined as the result of DuckDB stringifi
 - **THEN** the driver renders the cell using DuckDB-compatible date/time stringification
 
 #### Scenario: Nested values render in DuckDB-compatible form
-- **WHEN** DuckDB returns a LIST/STRUCT/MAP value
+- **WHEN** DuckDB returns a LIST/STRUCT/MAP value and nested formatting is enabled
 - **THEN** the driver renders the cell using DuckDB-compatible nested stringification
 
 #### Scenario: Blob renders as hex
@@ -102,17 +99,3 @@ DuckDB-compatible string form SHALL be defined as the result of DuckDB stringifi
 #### Scenario: Floating point renders deterministically
 - **WHEN** DuckDB returns a floating point value
 - **THEN** the driver renders the cell using Rust `Display` formatting
-
-### Requirement: Stable DuckDB Error Normalization
-When DuckDB returns an execution error, the driver SHALL normalize select error messages into stable, portable strings suitable for sqllogictest `expected_error` comparisons.
-
-Normalization SHALL be conservative and pattern-based.
-
-#### Scenario: Missing file open errors normalize to a stable message
-- **WHEN** DuckDB returns a file-open error whose message includes OS-specific details (e.g., `The system cannot find the file specified. (os error 2)`)
-- **THEN** the driver provides an error string that includes `Failed to open file` and excludes the OS-specific suffix
-
-#### Scenario: Unknown errors are not rewritten
-- **WHEN** DuckDB returns an error that does not match a supported normalization pattern
-- **THEN** the driver preserves the original error message for comparison and reporting
-

@@ -62,6 +62,12 @@ fn canonical_values_pass() {
 }
 
 #[test]
+fn type_fidelity_fixture_passes() {
+    let out = bin().arg(fixture("type_fidelity.slt")).output().unwrap();
+    assert_exit_0(&out);
+}
+
+#[test]
 fn zero_rows_query_pass() {
     let out = bin().arg(fixture("zero_rows.slt")).output().unwrap();
     assert_exit_0(&out);
