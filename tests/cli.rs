@@ -12,6 +12,24 @@ fn fixture(name: &str) -> String {
     path.to_string_lossy().to_string()
 }
 
+fn extension_relpath(name: &str) -> String {
+    let platform_dir = match (std::env::consts::OS, std::env::consts::ARCH) {
+        ("windows", "x86_64") => "windows_amd64".to_string(),
+        ("linux", "x86_64") => "linux_amd64".to_string(),
+        ("macos", "aarch64") => "osx_arm64".to_string(),
+        (os, arch) => format!("{}_{}", os, arch),
+    };
+    format!("extensions/{}/{}.duckdb_extension", platform_dir, name)
+}
+
+fn require_extension_fixture(name: &str) -> Option<String> {
+    let ext = fixture(&extension_relpath(name));
+    if !std::path::Path::new(&ext).exists() {
+        return None;
+    }
+    Some(ext)
+}
+
 fn display_path(path: &str) -> String {
     let cwd = std::env::current_dir().unwrap();
     let p = std::path::Path::new(path);
@@ -155,11 +173,10 @@ fn extensions_empty_spec_exits_1() {
 
 #[test]
 fn extension_path_can_install_load_and_run_query() {
-    let ext = fixture("extensions/quack.duckdb_extension");
-    if !std::path::Path::new(&ext).exists() {
-        // Local-only integration test: requires the quack.duckdb_extension fixture.
+    // Local-only integration test: requires the built extension fixture.
+    let Some(ext) = require_extension_fixture("quack") else {
         return;
-    }
+    };
 
     let out = bin()
         .args([
