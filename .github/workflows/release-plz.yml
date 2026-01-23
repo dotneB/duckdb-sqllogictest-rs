@@ -1,7 +1,10 @@
 name: Release-plz
 
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types:
+      - completed
     branches:
       - main
 
@@ -9,12 +12,12 @@ jobs:
   release-plz-pr:
     name: Release-plz PR
     runs-on: ubuntu-latest
-    if: ${{ github.repository_owner == 'dotneB' }}
+    if: ${{ github.repository_owner == 'dotneB' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' }}
     permissions:
       pull-requests: write
       contents: write
     concurrency:
-      group: release-plz-${{ github.ref }}
+      group: release-plz-${{ github.event.workflow_run.head_branch }}
       cancel-in-progress: false
     steps:
       - &checkout
