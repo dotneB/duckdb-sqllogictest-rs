@@ -2,14 +2,19 @@
 name = "duckdb-slt"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.89"
+description = "Command-line sqllogictest runner for DuckDB."
+license = "MIT"
+homepage = "https://github.com/dotneB/duckdb-sqllogictest-rs"
+repository = "https://github.com/dotneB/duckdb-sqllogictest-rs"
+documentation = "https://docs.rs/duckdb-slt"
 
 [dependencies]
-anyhow = "1.0.86"
+anyhow = "1.0.100"
 arrow-schema = "56.2.0"
-clap = { version = "4.5.23", features = ["derive"] }
+clap = { version = "4.5.54", features = ["derive"] }
 duckdb = { version = "1.4.3", features = ["bundled"] }
-glob = "0.3.1"
+glob = "0.3.3"
 sqllogictest = "0.29.0"
 
 [workspace]

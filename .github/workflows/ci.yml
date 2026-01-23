@@ -2,29 +2,79 @@ name: CI
 
 on:
   push:
+    branches: [ main, master ]
   pull_request:
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  RUST_TOOLCHAIN: "1.93.0"
+  RUST_MSRV: "1.89.0"
+
 jobs:
-  rust:
-    runs-on: ubuntu-latest
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@master
+      - name: Install Rust ${{ env.RUST_TOOLCHAIN }}
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.85.0
-          components: rustfmt,clippy
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
 
-      - name: Rust cache
-        uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@v2
 
-      - name: Format
-        run: cargo fmt --check
-
-      - name: Lint
-        run: cargo clippy -- -D warnings
+      - name: Build
+        run: cargo build --locked --verbose
 
       - name: Test
-        run: cargo test
+        run: cargo test --locked --verbose
+
+  msrv:
+    name: MSRV (Rust ${{ env.RUST_MSRV }})
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust ${{ env.RUST_MSRV }}
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_MSRV }}
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build (MSRV)
+        run: cargo build --locked --verbose
+
+      - name: Test (MSRV)
+        run: cargo test --locked --verbose
+
+  lint:
+    name: Lint (fmt + clippy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust ${{ env.RUST_TOOLCHAIN }} + (rustfmt, clippy)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: rustfmt
+        run: cargo fmt --all --check
+
+      - name: clippy
+        run: cargo clippy --locked --all-targets --all-features -- -D warnings
