@@ -2,16 +2,22 @@
 
 Command-line sqllogictest runner for DuckDB.
 
+[![Latest Version](https://img.shields.io/crates/v/duckdb-slt)](https://crates.io/crates/duckdb-slt)
+[![Documentation](https://img.shields.io/docsrs/duckdb-slt)](https://docs.rs/duckdb-slt)
+[![MIT License](https://img.shields.io/crates/l/duckdb-slt)](LICENSE)
+[![Downloads](https://img.shields.io/crates/d/duckdb-slt)](https://crates.io/crates/duckdb-slt)
+[![CI](https://github.com/dotneB/duckdb-sqllogictest-rs/workflows/CI/badge.svg)](https://github.com/dotneB/duckdb-sqllogictest-rs/actions/workflows/ci.yml)
+
 ## Install
 
 ```bash
 cargo install duckdb-slt
 ```
 
-From a local checkout:
+Or using binary install:
 
 ```bash
-cargo install --path .
+cargo binstall duckdb-slt
 ```
 
 ## Usage
