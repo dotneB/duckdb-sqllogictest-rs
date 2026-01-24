@@ -1,7 +1,24 @@
 use std::process::{Command, Output};
 
 fn bin() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_duckdb-slt"))
+    // DuckDB stores extension state in ~/.duckdb. On Windows CI, multiple tests
+    // can race creating it (reported as "Cannot create a file when that file already exists").
+    // Isolate each CLI invocation to a fresh temp home to avoid global state.
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_duckdb-slt"));
+
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let home =
+        std::env::temp_dir().join(format!("duckdb-slt-home-{}-{}", std::process::id(), nanos));
+    std::fs::create_dir_all(&home).unwrap();
+
+    cmd.env("HOME", &home)
+        .env("USERPROFILE", &home)
+        .env("DUCKDB_HOME", &home);
+
+    cmd
 }
 
 fn fixture(name: &str) -> String {
