@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1](https://github.com/dotneB/duckdb-sqllogictest-rs/compare/v0.1.0...v0.1.1) - 2026-01-24
+
+### <!-- 7 -->🤖 CI
+
+- isolate test runs duckdb home
+- add release-plz.toml
+- ignore docs
+- integrate cargo dist
+
+### <!-- 8 -->⚙️ Miscellaneous Tasks
+
+- update readme
+- docs.rs failing because it's only a binary
+- change changelog generator config
+
 ## [0.1.0](https://github.com/dotneB/duckdb-sqllogictest-rs/releases/tag/v0.1.0) - 2026-01-23
 
 ### <!-- 0 -->⛰️ Features
