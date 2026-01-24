@@ -9,24 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.0](https://github.com/dotneB/duckdb-sqllogictest-rs/releases/tag/v0.1.0) - 2026-01-23
 
-### Added
+### <!-- 0 -->⛰️ Features
 
-- more duckdb type formatting
-- uses sqllogictest-rs formatting
-- support files glob
-- update duckdb-driver value formatting
-- initial duckdb connection and extension parsing
-- initial cli contract
 - initial project setup
+- initial cli contract
+- initial duckdb connection and extension parsing
+- update duckdb-driver value formatting
+- support files glob
+- uses sqllogictest-rs formatting
+- more duckdb type formatting
 
-### Fixed
+### <!-- 1 -->🐛 Bug Fixes
 
 - improve output for tests
 
-### Other
+### <!-- 6 -->🧪 Testing
 
-- change to release-plz
 - guard extension test on platform
+
+### <!-- 7 -->🤖 CI
+
 - release-plz init
+- change to release-plz
+
+### <!-- 8 -->⚙️ Miscellaneous Tasks
+
 - update readme
 - update deps and toolchain
