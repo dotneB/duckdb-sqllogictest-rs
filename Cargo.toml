@@ -19,3 +19,8 @@ sqllogictest = "0.29.0"
 
 [workspace]
 resolver = "3"
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
