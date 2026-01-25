@@ -1,6 +1,6 @@
 # duckdb-slt
 
-Command-line sqllogictest runner for DuckDB.
+A Rust-based sqllogictest runner for DuckDB.
 
 [![Latest Version](https://img.shields.io/crates/v/duckdb-slt)](https://crates.io/crates/duckdb-slt)
 [![MIT License](https://img.shields.io/crates/l/duckdb-slt)](LICENSE)
