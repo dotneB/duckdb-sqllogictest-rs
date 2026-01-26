@@ -2,3 +2,8 @@ query I
 SELECT 1;
 ----
 1
+
+query II
+SELECT 1,2;
+----
+1 2

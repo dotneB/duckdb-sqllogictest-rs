@@ -1,0 +1,5 @@
+# should fail because we're requiring 1 column but 2 are returned
+query I
+SELECT 1,2;
+----
+1 2

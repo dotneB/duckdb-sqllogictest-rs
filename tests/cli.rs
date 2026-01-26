@@ -269,3 +269,23 @@ fn require_can_load_extension_by_name_after_install() {
 
     assert_exit_0(&out);
 }
+
+#[test]
+fn query_column_count_too_few_fails_with_expected_actual_counts() {
+    let path = fixture("column_count_too_few.slt");
+    let out = bin().arg(&path).output().unwrap();
+    assert_exit_code(&out, 2);
+
+    let stderr = String::from_utf8(out.stderr).unwrap();
+    assert!(stderr.contains("Expected 3 columns, but got 1 columns"));
+}
+
+#[test]
+fn query_column_count_too_many_fails_with_expected_actual_counts() {
+    let path = fixture("column_count_too_many.slt");
+    let out = bin().arg(&path).output().unwrap();
+    assert_exit_code(&out, 2);
+
+    let stderr = String::from_utf8(out.stderr).unwrap();
+    assert!(stderr.contains("Expected 1 columns, but got 2 columns"));
+}

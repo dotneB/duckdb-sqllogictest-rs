@@ -1,0 +1,5 @@
+# should fail because we're requiring 3 columns but only 1 is returned
+query III
+SELECT 1;
+----
+1

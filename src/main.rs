@@ -20,6 +20,14 @@ const EXIT_OK: u8 = 0;
 const EXIT_RUNTIME_ERROR: u8 = 1;
 const EXIT_TEST_FAIL: u8 = 2;
 
+#[allow(clippy::ptr_arg)]
+fn validate_query_column_count(
+    actual: &Vec<sqllogictest::DefaultColumnType>,
+    expected: &Vec<sqllogictest::DefaultColumnType>,
+) -> bool {
+    actual.len() == expected.len()
+}
+
 #[derive(Parser, Debug)]
 #[command(name = "duckdb-slt", about = "DuckDB sqllogictest runner", version)]
 struct Cli {
@@ -393,6 +401,13 @@ fn render_failure_report(
         TestErrorKind::QueryResultColumnsMismatch {
             expected, actual, ..
         } => {
+            let expected_count = expected.chars().count();
+            let actual_count = actual.chars().count();
+            writeln!(
+                out,
+                "details: Expected {expected_count} columns, but got {actual_count} columns"
+            )
+            .expect("writing to String should not fail");
             writeln!(out, "expected_columns: {expected}")
                 .expect("writing to String should not fail");
             writeln!(out, "actual_columns: {actual}").expect("writing to String should not fail");
@@ -481,6 +496,8 @@ fn run_one_file(cli: &Cli, base_dir: &Path, path: &Path) -> std::result::Result<
             Ok(DuckdbDriver::new(conn))
         }
     });
+
+    runner.with_column_validator(validate_query_column_count);
 
     match runner.run_file(&run_path) {
         Ok(()) => Ok(()),
