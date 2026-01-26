@@ -523,6 +523,73 @@ impl DuckdbDriver {
             rows: out_rows,
         })
     }
+
+    fn looks_like_select(sql: &str) -> bool {
+        let s = sql.trim_start();
+        let mut it = s.split_ascii_whitespace();
+        match it.next() {
+            Some(first) => {
+                let first = first.to_ascii_lowercase();
+                first == "select" || first == "with"
+            }
+            None => false,
+        }
+    }
+
+    fn trim_trailing_semicolon(sql: &str) -> &str {
+        let s = sql.trim();
+        s.strip_suffix(';').unwrap_or(s).trim_end()
+    }
+
+    fn quote_ident(ident: &str) -> String {
+        let mut out = String::with_capacity(ident.len() + 2);
+        out.push('"');
+        for ch in ident.chars() {
+            if ch == '"' {
+                out.push('"');
+                out.push('"');
+            } else {
+                out.push(ch);
+            }
+        }
+        out.push('"');
+        out
+    }
+
+    fn describe_tz_columns(conn: &Connection, sql: &str) -> Result<Vec<String>, Error> {
+        let sql = Self::trim_trailing_semicolon(sql);
+        let describe_sql = format!("DESCRIBE {sql}");
+        let mut stmt = conn.prepare(&describe_sql)?;
+        let mut rows = stmt.query([])?;
+
+        let mut cols = Vec::new();
+        while let Some(row) = rows.next()? {
+            let name: String = row.get(0)?;
+            let ty: String = row.get(1)?;
+            if ty.eq_ignore_ascii_case("TIME WITH TIME ZONE")
+                || ty.eq_ignore_ascii_case("TIMESTAMP WITH TIME ZONE")
+            {
+                cols.push(name);
+            }
+        }
+
+        Ok(cols)
+    }
+
+    fn wrap_query_cast_varchar(sql: &str, tz_cols: &[String]) -> String {
+        let sql = Self::trim_trailing_semicolon(sql);
+        let mut replace = String::new();
+
+        for (i, col) in tz_cols.iter().enumerate() {
+            if i > 0 {
+                replace.push_str(", ");
+            }
+            let ident = Self::quote_ident(col);
+            replace.push_str(&format!("CAST({ident} AS VARCHAR) AS {ident}"));
+        }
+
+        format!("SELECT * REPLACE ({replace}) FROM ({sql}) __duckdb_slt_tz",)
+    }
 }
 
 impl DB for DuckdbDriver {
@@ -530,6 +597,15 @@ impl DB for DuckdbDriver {
     type ColumnType = DefaultColumnType;
 
     fn run(&mut self, sql: &str) -> Result<DBOutput<Self::ColumnType>, Self::Error> {
+        if Self::looks_like_select(sql)
+            && let Ok(tz_cols) = Self::describe_tz_columns(&self.conn, sql)
+            && !tz_cols.is_empty()
+        {
+            let wrapped = Self::wrap_query_cast_varchar(sql, &tz_cols);
+            let mut stmt = self.conn.prepare(&wrapped)?;
+            return Self::collect_rows_via_query(&mut stmt).map_err(Into::into);
+        }
+
         let mut stmt = self.conn.prepare(sql)?;
 
         match stmt.execute([]) {

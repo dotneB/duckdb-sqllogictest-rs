@@ -22,3 +22,13 @@ query ?
 SELECT from_hex('000f10ff');
 ----
 0x000f10ff
+
+query I
+SELECT TIMETZ '12:00:00+00' AS t
+----
+12:00:00+00
+
+query I
+SELECT TIMETZ '12:00:00+02' AS t
+----
+12:00:00+02

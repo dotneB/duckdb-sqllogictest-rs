@@ -87,6 +87,10 @@ DuckDB-compatible string form SHALL be defined as the result of DuckDB stringifi
 - **WHEN** DuckDB returns a DATE/TIME/TIMESTAMP/INTERVAL value
 - **THEN** the driver renders the cell using DuckDB-compatible date/time stringification
 
+#### Scenario: Time with time zone renders in DuckDB-compatible form
+- **WHEN** DuckDB returns a `TIME WITH TIME ZONE` value
+- **THEN** the driver renders the cell including the time zone offset exactly as DuckDB would for `CAST(value AS VARCHAR)`
+
 #### Scenario: Nested values render in DuckDB-compatible form
 - **WHEN** DuckDB returns a LIST/STRUCT/MAP value
 - **THEN** the driver renders the cell using DuckDB-compatible nested stringification
