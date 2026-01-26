@@ -88,7 +88,9 @@ Supported forms:
 
 ## Compatibility Notes
 
-Compared to [duckdb-sqllogictest-python](https://github.com/duckdb/duckdb-sqllogictest-python), an important difference is that `duckdb-slt` does not support the `require` keyword (for example `require quack`). If you want to run the same test files with `duckdb-slt`, those `require ...` lines need to be commented out.
+Not all keywords/directives added in [duckdb-sqllogictest-python](https://github.com/duckdb/duckdb-sqllogictest-python) are supported.
+`duckdb-slt` at the moment only supports:
+- `require` with the notable distinction that it only attempts to LOAD the extension, the installation of it needs to be done by using the [extensions option](#extensions).
 
 ## Exit Codes
 

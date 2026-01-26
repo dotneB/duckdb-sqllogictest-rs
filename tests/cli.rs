@@ -232,3 +232,40 @@ fn glob_expands_files_and_runs_each() {
     let out = bin().arg(pattern).output().unwrap();
     assert_exit_0(&out);
 }
+
+#[test]
+fn require_missing_extension_is_ignored_and_file_runs() {
+    let path = fixture("require_missing_extension.slt");
+    let out = bin().arg(&path).output().unwrap();
+    assert_exit_0(&out);
+}
+
+#[test]
+fn require_does_not_break_failure_location_reporting() {
+    let path = fixture("require_fail.slt");
+    let out = bin().arg(&path).output().unwrap();
+    assert_exit_code(&out, 2);
+
+    let stderr = String::from_utf8(out.stderr).unwrap();
+    assert!(stderr.contains(&format!("  at: {}:3", display_path(&path))));
+}
+
+#[test]
+fn require_can_load_extension_by_name_after_install() {
+    // Local-only integration test: requires the built extension fixture.
+    let Some(ext) = require_extension_fixture("quack") else {
+        return;
+    };
+
+    let out = bin()
+        .args([
+            "--allow-unsigned-extensions",
+            "--extensions",
+            &ext,
+            &fixture("require_quack_hello.slt"),
+        ])
+        .output()
+        .unwrap();
+
+    assert_exit_0(&out);
+}

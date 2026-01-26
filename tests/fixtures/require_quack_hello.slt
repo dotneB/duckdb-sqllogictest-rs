@@ -1,0 +1,6 @@
+require quack
+
+query T
+FROM quack('Joe');
+----
+Hello Joe

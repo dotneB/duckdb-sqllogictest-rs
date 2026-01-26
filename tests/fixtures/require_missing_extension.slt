@@ -1,0 +1,6 @@
+require 'does_not_exist'
+
+query I
+SELECT 1;
+----
+1

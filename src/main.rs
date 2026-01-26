@@ -1,5 +1,6 @@
 mod duckdb_driver;
 mod extensions;
+mod preprocessor;
 
 use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
@@ -12,7 +13,8 @@ use sqllogictest::runner::TestErrorKind;
 use sqllogictest::{QueryExpect, Record, Runner};
 
 use crate::duckdb_driver::DuckdbDriver;
-use crate::extensions::ExtensionActions;
+use crate::extensions::{ExtensionActions, escape_sql_string_literal};
+use crate::preprocessor::preprocess_file;
 
 const EXIT_OK: u8 = 0;
 const EXIT_RUNTIME_ERROR: u8 = 1;
@@ -321,7 +323,8 @@ fn find_record_id(main_file: &Path, loc: &sqllogictest::Location) -> Option<Reco
 }
 
 fn render_failure_report(
-    main_file: &Path,
+    display_main_file: &Path,
+    parse_main_file: &Path,
     base_dir: &Path,
     test_err: &sqllogictest::TestError,
 ) -> String {
@@ -329,7 +332,14 @@ fn render_failure_report(
 
     let kind = test_err.kind();
     let loc = test_err.location();
-    let record_id = find_record_id(main_file, &loc);
+    let record_id = find_record_id(parse_main_file, &loc);
+
+    let parse_main_file_str = parse_main_file.to_string_lossy();
+    let display_loc_file = if loc.file() == parse_main_file_str {
+        display_main_file.to_string_lossy().to_string()
+    } else {
+        loc.file().to_string()
+    };
 
     let mut out = String::new();
 
@@ -339,7 +349,7 @@ fn render_failure_report(
     writeln!(
         out,
         "  at: {}:{}",
-        format_user_path_str(base_dir, loc.file()),
+        format_user_path_str(base_dir, &display_loc_file),
         loc.line()
     )
     .expect("writing to String should not fail");
@@ -438,9 +448,22 @@ fn run_one_file(cli: &Cli, base_dir: &Path, path: &Path) -> std::result::Result<
         .map(|raw| crate::extensions::compile_extension_actions(raw))
         .collect::<Result<Vec<ExtensionActions>>>()
         .map_err(FileRunError::Runtime)?;
+
+    let preprocessed = preprocess_file(path).map_err(FileRunError::Runtime)?;
+    let run_path = preprocessed
+        .as_ref()
+        .map(|p| p.preprocessed_path().to_path_buf())
+        .unwrap_or_else(|| path.to_path_buf());
+
+    let required_extensions = preprocessed
+        .as_ref()
+        .map(|p| p.directives.required_extensions.clone())
+        .unwrap_or_default();
+
     let mut runner = Runner::new(move || {
         let db = db.clone();
         let extensions = extensions.clone();
+        let required_extensions = required_extensions.clone();
 
         async move {
             let conn = open_duckdb_connection(db.as_deref(), allow_unsigned_extensions)?;
@@ -450,21 +473,44 @@ fn run_one_file(cli: &Cli, base_dir: &Path, path: &Path) -> std::result::Result<
                 conn.execute_batch(&ext.load_sql)?;
             }
 
+            for name in &required_extensions {
+                let sql = format!("LOAD '{}';", escape_sql_string_literal(name));
+                let _ = conn.execute_batch(&sql);
+            }
+
             Ok(DuckdbDriver::new(conn))
         }
     });
 
-    match runner.run_file(path) {
+    match runner.run_file(&run_path) {
         Ok(()) => Ok(()),
         Err(test_err) => match test_err.kind() {
-            TestErrorKind::ParseError(_) => Err(FileRunError::Runtime(anyhow::anyhow!(
-                "parse error in {}: {}",
-                path.display(),
-                test_err.display(false)
-            ))),
-            _ => Err(FileRunError::TestFailure(render_failure_report(
-                path, base_dir, &test_err,
-            ))),
+            TestErrorKind::ParseError(_) => {
+                let mut details = test_err.display(false).to_string();
+                if let Some(preprocessed) = preprocessed.as_ref() {
+                    let from = preprocessed.preprocessed_path().to_string_lossy();
+                    let to = path.to_string_lossy();
+                    details = details.replace(from.as_ref(), to.as_ref());
+                }
+
+                Err(FileRunError::Runtime(anyhow::anyhow!(
+                    "parse error in {}: {}",
+                    path.display(),
+                    details
+                )))
+            }
+            _ => {
+                let parse_main_file = preprocessed
+                    .as_ref()
+                    .map(|p| p.preprocessed_path())
+                    .unwrap_or(path);
+                Err(FileRunError::TestFailure(render_failure_report(
+                    path,
+                    parse_main_file,
+                    base_dir,
+                    &test_err,
+                )))
+            }
         },
     }
 }
