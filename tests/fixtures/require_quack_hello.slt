@@ -1,6 +1,6 @@
 require quack
 
 query T
-FROM quack('Joe');
+SELECT quack('Joe');
 ----
-Hello Joe
+Quack Joe 🐥

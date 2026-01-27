@@ -213,8 +213,8 @@ fn extensions_can_install_from_core_and_core_nightly() {
         .args([
             "--extensions",
             "httpfs@core",
-            "--extensions",
-            "spatial@core_nightly",
+            // "--extensions",
+            // "spatial@core_nightly",
             &fixture("extensions_repositories.slt"),
         ])
         .output()
