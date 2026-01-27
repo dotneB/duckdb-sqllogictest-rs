@@ -8,6 +8,13 @@ license = "MIT"
 homepage = "https://github.com/dotneB/duckdb-sqllogictest-rs"
 repository = "https://github.com/dotneB/duckdb-sqllogictest-rs"
 documentation = "https://docs.rs/duckdb-slt"
+exclude = [
+    "/.github/**",
+    "/.vscode/**",
+    "/openspec/**",
+    "**/*.duckdb_extension",
+    "**/*.duckdb_extension.gz",
+]
 
 [dependencies]
 anyhow = "1.0.100"
