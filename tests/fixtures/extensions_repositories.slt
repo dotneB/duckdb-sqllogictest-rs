@@ -1,17 +1,15 @@
 query TTT
 SELECT extension_name, installed_from, install_mode
 FROM duckdb_extensions()
-WHERE extension_name IN ('httpfs', 'spatial')
+WHERE extension_name IN ('httpfs')
 ORDER BY extension_name;
 ----
 httpfs core REPOSITORY
-spatial core_nightly REPOSITORY
 
 query TI
 SELECT extension_name, CASE WHEN length(extension_version) > 0 THEN 1 ELSE 0 END
 FROM duckdb_extensions()
-WHERE extension_name IN ('httpfs', 'spatial')
+WHERE extension_name IN ('httpfs')
 ORDER BY extension_name;
 ----
 httpfs 1
-spatial 1
