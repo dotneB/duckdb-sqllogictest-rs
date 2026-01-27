@@ -11,7 +11,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### <!-- 0 -->⛰️ Features
 
-- pin duckdb to 1.4.3
 - pin duckdb to 1.4.4
 
 ### <!-- 6 -->🧪 Testing
@@ -19,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - proper amd64 version
 
 ## [0.1.5](https://github.com/dotneB/duckdb-sqllogictest-rs/compare/v0.1.4...v0.1.5) - 2026-01-26
+
+### <!-- 0 -->⛰️ Features
+
+- pin duckdb to 1.4.3
 
 ### <!-- 1 -->🐛 Bug Fixes
 
