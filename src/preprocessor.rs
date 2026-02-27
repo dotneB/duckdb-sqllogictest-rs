@@ -7,6 +7,9 @@ pub struct PreprocessDirectives {
     pub required_extensions: Vec<String>,
 }
 
+const UNSUPPORTED_REQUIRED_DIRECTIVES: &[&str] = &["mode"];
+
+#[derive(Debug)]
 pub struct PreprocessRun {
     preprocessed: PathBuf,
     pub directives: PreprocessDirectives,
@@ -32,6 +35,7 @@ trait DirectiveHandler {
 struct HandlerOutput {
     rewritten_line: String,
     required_extension: Option<String>,
+    skip_next_record: bool,
 }
 
 struct RequireDirectiveHandler;
@@ -47,8 +51,54 @@ impl DirectiveHandler for RequireDirectiveHandler {
         Some(HandlerOutput {
             rewritten_line: format!("# {trimmed}"),
             required_extension: parse_single_token_name(rest),
+            skip_next_record: false,
         })
     }
+}
+
+struct SkipIfDirectiveHandler;
+
+impl DirectiveHandler for SkipIfDirectiveHandler {
+    fn handle_line(&self, line: &str) -> Option<HandlerOutput> {
+        let trimmed = line.trim_start();
+        let (head, rest) = trimmed.split_once(char::is_whitespace)?;
+        if head != "skipif" {
+            return None;
+        }
+
+        let target = parse_single_token_name(rest);
+        Some(HandlerOutput {
+            rewritten_line: format!("# {trimmed}"),
+            required_extension: None,
+            skip_next_record: target.as_deref() == Some("duckdb"),
+        })
+    }
+}
+
+struct OnlyIfDirectiveHandler;
+
+impl DirectiveHandler for OnlyIfDirectiveHandler {
+    fn handle_line(&self, line: &str) -> Option<HandlerOutput> {
+        let trimmed = line.trim_start();
+        let (head, rest) = trimmed.split_once(char::is_whitespace)?;
+        if head != "onlyif" {
+            return None;
+        }
+
+        let target = parse_single_token_name(rest);
+        Some(HandlerOutput {
+            rewritten_line: format!("# {trimmed}"),
+            required_extension: None,
+            skip_next_record: target.as_deref() != Some("duckdb"),
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SkipState {
+    None,
+    AwaitingRecordStart,
+    SkippingRecord,
 }
 
 pub fn preprocess_file(path: &Path) -> Result<Option<PreprocessRun>> {
@@ -58,10 +108,16 @@ pub fn preprocess_file(path: &Path) -> Result<Option<PreprocessRun>> {
     let mut directives = PreprocessDirectives::default();
     let mut out = String::with_capacity(script.len());
     let mut did_change = false;
+
     let require_handler = RequireDirectiveHandler;
-    let handlers: [&dyn DirectiveHandler; 1] = [&require_handler];
+    let skipif_handler = SkipIfDirectiveHandler;
+    let onlyif_handler = OnlyIfDirectiveHandler;
+    let handlers: [&dyn DirectiveHandler; 3] = [&require_handler, &skipif_handler, &onlyif_handler];
+    let mut skip_state = SkipState::None;
+    let mut line_no = 0usize;
 
     for raw in script.split_inclusive('\n') {
+        line_no += 1;
         let (line, eol) = split_line_with_eol(raw);
 
         let trimmed = line.trim_start();
@@ -71,10 +127,48 @@ pub fn preprocess_file(path: &Path) -> Result<Option<PreprocessRun>> {
             continue;
         }
 
-        if let Some(rewritten_line) = run_directive_pipeline(line, &mut directives, &handlers) {
+        if let Some(keyword) = find_unsupported_required_directive(line) {
+            return Err(anyhow::anyhow!(
+                "unsupported required directive '{keyword}' at {}:{line_no}",
+                path.display()
+            ));
+        }
+
+        if skip_state == SkipState::AwaitingRecordStart {
+            if trimmed.is_empty() {
+                out.push_str(line);
+                out.push_str(eol);
+                continue;
+            }
+
             did_change = true;
-            out.push_str(&rewritten_line);
+            out.push_str(&comment_out(line));
             out.push_str(eol);
+            skip_state = SkipState::SkippingRecord;
+            continue;
+        }
+
+        if skip_state == SkipState::SkippingRecord {
+            if trimmed.is_empty() {
+                out.push_str(line);
+                out.push_str(eol);
+                skip_state = SkipState::None;
+                continue;
+            }
+
+            did_change = true;
+            out.push_str(&comment_out(line));
+            out.push_str(eol);
+            continue;
+        }
+
+        if let Some(output) = run_directive_pipeline(line, &mut directives, &handlers) {
+            did_change = true;
+            out.push_str(&output.rewritten_line);
+            out.push_str(eol);
+            if output.skip_next_record {
+                skip_state = SkipState::AwaitingRecordStart;
+            }
             continue;
         }
 
@@ -107,20 +201,32 @@ fn run_directive_pipeline(
     line: &str,
     directives: &mut PreprocessDirectives,
     handlers: &[&dyn DirectiveHandler],
-) -> Option<String> {
+) -> Option<HandlerOutput> {
     for handler in handlers {
         let Some(output) = handler.handle_line(line) else {
             continue;
         };
 
-        if let Some(ext) = output.required_extension {
-            directives.required_extensions.push(ext);
+        if let Some(ext) = output.required_extension.as_ref() {
+            directives.required_extensions.push(ext.clone());
         }
 
-        return Some(output.rewritten_line);
+        return Some(output);
     }
 
     None
+}
+
+fn comment_out(line: &str) -> String {
+    format!("# {}", line.trim_start())
+}
+
+fn find_unsupported_required_directive(line: &str) -> Option<&'static str> {
+    let token = line.split_whitespace().next()?;
+    UNSUPPORTED_REQUIRED_DIRECTIVES
+        .iter()
+        .copied()
+        .find(|keyword| *keyword == token)
 }
 
 fn parse_single_token_name(rest: &str) -> Option<String> {
@@ -201,6 +307,7 @@ mod tests {
 
         assert_eq!(output.rewritten_line, "# require httpfs");
         assert_eq!(output.required_extension.as_deref(), Some("httpfs"));
+        assert!(!output.skip_next_record);
     }
 
     #[test]
@@ -210,6 +317,7 @@ mod tests {
 
         assert_eq!(output.rewritten_line, "# require httpfs");
         assert_eq!(output.required_extension.as_deref(), Some("httpfs"));
+        assert!(!output.skip_next_record);
     }
 
     #[test]
@@ -219,6 +327,7 @@ mod tests {
 
         assert_eq!(output.rewritten_line, "# require 'httpfs'");
         assert_eq!(output.required_extension.as_deref(), Some("httpfs"));
+        assert!(!output.skip_next_record);
     }
 
     #[test]
@@ -228,6 +337,7 @@ mod tests {
 
         assert_eq!(output.rewritten_line, "# require 'httpfs");
         assert_eq!(output.required_extension.as_deref(), Some("httpfs"));
+        assert!(!output.skip_next_record);
     }
 
     #[test]
@@ -237,6 +347,7 @@ mod tests {
 
         assert_eq!(output.rewritten_line, "# require   ");
         assert!(output.required_extension.is_none());
+        assert!(!output.skip_next_record);
     }
 
     #[test]
@@ -297,5 +408,73 @@ mod tests {
         assert!(run.is_none());
 
         cleanup_input(&input_path);
+    }
+
+    #[test]
+    fn preprocess_file_skipif_duckdb_skips_following_record() {
+        let script = "skipif duckdb\nquery I\nSELECT 1;\n----\n1\n\nquery I\nSELECT 2;\n----\n2\n";
+        let expected =
+            "# skipif duckdb\n# query I\n# SELECT 1;\n# ----\n# 1\n\nquery I\nSELECT 2;\n----\n2\n";
+
+        let (input_path, run) = run_preprocessor(script);
+        let run = run.expect("skipif duckdb should trigger preprocessing");
+        let output = read_preprocessed(&run);
+
+        assert_eq!(output, expected);
+        assert_eq!(
+            script.split_inclusive('\n').count(),
+            output.split_inclusive('\n').count()
+        );
+
+        drop(run);
+        cleanup_input(&input_path);
+    }
+
+    #[test]
+    fn preprocess_file_onlyif_non_duckdb_skips_following_record() {
+        let script = "onlyif sqlite\nstatement ok\nSELECT 1;\n\nstatement ok\nSELECT 2;\n";
+        let expected = "# onlyif sqlite\n# statement ok\n# SELECT 1;\n\nstatement ok\nSELECT 2;\n";
+
+        let (input_path, run) = run_preprocessor(script);
+        let run = run.expect("onlyif sqlite should trigger preprocessing");
+        let output = read_preprocessed(&run);
+
+        assert_eq!(output, expected);
+        assert_eq!(
+            script.split_inclusive('\n').count(),
+            output.split_inclusive('\n').count()
+        );
+
+        drop(run);
+        cleanup_input(&input_path);
+    }
+
+    #[test]
+    fn preprocess_file_onlyif_duckdb_rewrites_but_keeps_record() {
+        let script = "onlyif duckdb\nstatement ok\nSELECT 1;\n";
+        let expected = "# onlyif duckdb\nstatement ok\nSELECT 1;\n";
+
+        let (input_path, run) = run_preprocessor(script);
+        let run = run.expect("onlyif duckdb should trigger preprocessing");
+        let output = read_preprocessed(&run);
+
+        assert_eq!(output, expected);
+
+        drop(run);
+        cleanup_input(&input_path);
+    }
+
+    #[test]
+    fn preprocess_file_reports_unsupported_required_directive_with_location() {
+        let script = "mode output_hash\nstatement ok\nSELECT 1;\n";
+
+        let path = make_temp_script_path();
+        std::fs::write(&path, script).unwrap();
+
+        let err = preprocess_file(&path).unwrap_err().to_string();
+        assert!(err.contains("unsupported required directive 'mode'"));
+        assert!(err.contains(&format!("{}:1", path.display())));
+
+        cleanup_input(&path);
     }
 }

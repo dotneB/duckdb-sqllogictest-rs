@@ -89,8 +89,10 @@ Supported forms:
 ## Compatibility Notes
 
 Not all keywords/directives added in [duckdb-sqllogictest-python](https://github.com/duckdb/duckdb-sqllogictest-python) are supported.
-`duckdb-slt` at the moment only supports:
-- `require` with the notable distinction that it only attempts to LOAD the extension, the installation of it needs to be done by using the [extensions option](#extensions).
+`duckdb-slt` currently supports:
+- `require` (only attempts to `LOAD`; installation is done via the [extensions option](#extensions))
+- `skipif` (record is skipped when the target is `duckdb`)
+- `onlyif` (record is skipped when the target is not `duckdb`)
 
 ## Exit Codes
 

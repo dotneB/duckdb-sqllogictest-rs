@@ -1,0 +1,13 @@
+statement ok
+CREATE TABLE skipif_duckdb(x INTEGER);
+
+skipif duckdb
+query I
+SELECT 99;
+----
+99
+
+query I
+SELECT 1;
+----
+1

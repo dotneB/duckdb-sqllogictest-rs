@@ -62,6 +62,15 @@ fn fixtures_dir() -> std::path::PathBuf {
         .join("fixtures")
 }
 
+fn corpus_subset_files() -> Vec<String> {
+    [
+        fixture("skipif_duckdb.slt"),
+        fixture("onlyif_non_duckdb.slt"),
+        fixture("onlyif_duckdb.slt"),
+    ]
+    .to_vec()
+}
+
 fn assert_exit_0(out: &Output) {
     assert_exit_code(out, 0);
 }
@@ -267,6 +276,51 @@ fn require_can_load_extension_by_name_after_install() {
         .output()
         .unwrap();
 
+    assert_exit_0(&out);
+}
+
+#[test]
+fn skipif_duckdb_skips_following_record() {
+    let out = bin().arg(fixture("skipif_duckdb.slt")).output().unwrap();
+    assert_exit_0(&out);
+}
+
+#[test]
+fn onlyif_non_duckdb_skips_following_record() {
+    let out = bin()
+        .arg(fixture("onlyif_non_duckdb.slt"))
+        .output()
+        .unwrap();
+    assert_exit_0(&out);
+}
+
+#[test]
+fn onlyif_duckdb_preserves_following_record_execution() {
+    let out = bin().arg(fixture("onlyif_duckdb.slt")).output().unwrap();
+    assert_exit_0(&out);
+}
+
+#[test]
+fn unsupported_required_directive_exits_1_with_actionable_error() {
+    let path = fixture("unsupported_required_directive_mode.slt");
+    let out = bin().arg(&path).output().unwrap();
+    assert_exit_code(&out, 1);
+
+    let stderr = String::from_utf8(out.stderr).unwrap();
+    assert!(stderr.contains("unsupported required directive 'mode'"));
+    assert!(stderr.contains(&display_path(&path)));
+    assert!(stderr.contains(":1"));
+}
+
+#[test]
+fn duckdb_corpus_subset_compatibility_harness_passes() {
+    let files = corpus_subset_files();
+    assert!(
+        !files.is_empty(),
+        "corpus subset file list must not be empty"
+    );
+
+    let out = bin().args(files).output().unwrap();
     assert_exit_0(&out);
 }
 

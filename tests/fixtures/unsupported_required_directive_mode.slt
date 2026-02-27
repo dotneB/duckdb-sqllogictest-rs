@@ -1,0 +1,4 @@
+mode output_hash
+
+statement ok
+SELECT 1;

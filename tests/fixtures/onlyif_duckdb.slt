@@ -1,0 +1,8 @@
+statement ok
+CREATE TABLE onlyif_duckdb(x INTEGER);
+
+onlyif duckdb
+query I
+SELECT 1;
+----
+1
