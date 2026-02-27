@@ -10,7 +10,7 @@ The system SHALL provide a stable CLI for the `duckdb-slt` binary with the follo
 - `--allow-unsigned-extensions`: opt-in flag to permit loading unsigned extensions.
 - `--extensions <EXT>` / `-e <EXT>`: zero or more extension specs; may be repeated.
 - `--workdir <DIR>` / `-w <DIR>`: base working directory for resolving relative paths.
-- `--fail-fast` / `--no-fail-fast`: toggle whether execution stops after the first test mismatch.
+- `--fail-fast`: toggle whether execution stops after the first test mismatch.
 - `<FILES...>`: one or more sqllogictest input files or glob patterns to execute.
 
 The system SHALL default `fail-fast` behavior to enabled.
@@ -180,6 +180,10 @@ When an expectation mismatch occurs while running `duckdb-slt`, the system SHALL
 - the expected output
 - the actual output
 
+For each input file execution, the system SHALL parse record metadata for mismatch diagnostics at most once and SHALL reuse that metadata for every mismatch reported for the same file.
+
+Record metadata reuse SHALL preserve the same record identifier and SQL context that would be produced by location-based lookup.
+
 #### Scenario: Query mismatch prints file, record identifier, and SQL
 - **WHEN** a query record mismatches between expected and actual output
 - **THEN** stderr includes the file path, the record identifier, and the SQL statement for the failing record
@@ -187,6 +191,10 @@ When an expectation mismatch occurs while running `duckdb-slt`, the system SHALL
 #### Scenario: Statement mismatch prints expected vs actual
 - **WHEN** a statement record mismatches due to an unexpected error or unexpected success
 - **THEN** stderr includes both the expected outcome and the actual outcome
+
+#### Scenario: Multiple mismatches in one file reuse metadata cache
+- **WHEN** two or more mismatches are reported while executing the same sqllogictest file
+- **THEN** record metadata is parsed once for that file and reused for each mismatch report
 
 ### Requirement: User-Facing File Paths
 When `duckdb-slt` prints a user-facing file path (e.g., PASS/FAIL lines and mismatch reports), it SHALL prefer paths relative to the process working directory (after applying `--workdir`).
@@ -277,3 +285,22 @@ When a test fails due to a query column-count mismatch, the system SHALL include
 - **WHEN** a query fails due to a column-count mismatch
 - **THEN** stderr includes text equivalent to `Expected X columns, but got Y columns`
 
+### Requirement: Focused CLI Implementation Modules
+The system SHALL organize CLI execution logic into focused internal modules with the following responsibilities:
+
+- `src/cli.rs`: argument model and parse policy.
+- `src/orchestrator.rs`: test-run orchestration, fail-fast/runtime policy, and summary accounting.
+- `src/reporting.rs`: mismatch rendering and human-readable report formatting.
+- `src/pathing.rs`: input file expansion, path normalization, and user-facing path display logic.
+- `src/runtime.rs`: DuckDB connection creation and extension bootstrap steps.
+
+#### Scenario: Developer inspects module boundaries
+- **WHEN** a developer inspects the CLI runtime implementation in `src/`
+- **THEN** each responsibility area is implemented in its corresponding focused module
+
+### Requirement: Thin Binary Entrypoint Delegation
+The system SHALL keep `src/main.rs` as a thin entrypoint that delegates parsing, orchestration, path handling, runtime setup, and reporting to focused modules while preserving existing user-visible CLI behavior.
+
+#### Scenario: Existing CLI behavior remains unchanged after refactor
+- **WHEN** the existing CLI integration test suite is executed after module extraction
+- **THEN** command-line behavior, output semantics, and exit-code behavior remain consistent with pre-refactor expectations

@@ -444,48 +444,19 @@ impl DuckdbDriver {
         // The statement is assumed to already be executed; using raw_query avoids
         // executing it again (important for statements with side effects).
         let mut rows = stmt.raw_query();
-        let stmt_ref = rows.as_ref().expect("rows should keep statement");
-        let col_count = stmt_ref.column_count();
-
-        let mut types: Vec<DefaultColumnType> = (0..col_count)
-            .map(|i| {
-                let dt: ArrowDataType = stmt_ref.column_type(i);
-                Self::map_arrow_type(&dt)
-            })
-            .collect();
-
-        let mut out_rows: Vec<Vec<String>> = Vec::new();
-
-        if let Some(row) = rows.next()? {
-            let mut out_row: Vec<String> = Vec::with_capacity(col_count);
-            for (i, ty) in types.iter_mut().enumerate().take(col_count) {
-                let value = row.get_ref(i)?;
-                if *ty == DefaultColumnType::Any {
-                    *ty = Self::map_duckdb_type(value.data_type());
-                }
-                out_row.push(Self::format_value(value)?);
-            }
-            out_rows.push(out_row);
-        }
-
-        while let Some(row) = rows.next()? {
-            let mut out_row: Vec<String> = Vec::with_capacity(col_count);
-            for i in 0..col_count {
-                out_row.push(Self::format_value(row.get_ref(i)?)?);
-            }
-            out_rows.push(out_row);
-        }
-
-        Ok(DBOutput::Rows {
-            types,
-            rows: out_rows,
-        })
+        Self::collect_rows_from_iter(&mut rows)
     }
 
     fn collect_rows_via_query(
         stmt: &mut duckdb::Statement<'_>,
     ) -> Result<DBOutput<DefaultColumnType>, Error> {
         let mut rows = stmt.query([])?;
+        Self::collect_rows_from_iter(&mut rows)
+    }
+
+    fn collect_rows_from_iter(
+        rows: &mut duckdb::Rows<'_>,
+    ) -> Result<DBOutput<DefaultColumnType>, Error> {
         let stmt_ref = rows.as_ref().expect("rows should keep statement");
         let col_count = stmt_ref.column_count();
 
@@ -827,6 +798,39 @@ mod tests {
             let expected: String = row.get(1)?;
             assert_eq!(actual, expected, "sql: {sql}");
         }
+
+        Ok(())
+    }
+
+    #[test]
+    fn query_and_execute_paths_collect_identical_rows_and_types() -> Result<(), Error> {
+        let conn = Connection::open_in_memory()?;
+        let sql = "SELECT 1::INTEGER AS a, 1.5::DOUBLE AS b, 'x'::VARCHAR AS c";
+
+        let via_query = {
+            let mut stmt = conn.prepare(sql)?;
+            DuckdbDriver::collect_rows_via_query(&mut stmt)?
+        };
+
+        let via_execute = {
+            let mut stmt = conn.prepare(sql)?;
+            let _ = stmt.execute([])?;
+            DuckdbDriver::collect_rows(&mut stmt)?
+        };
+
+        let (types_query, rows_query) = match via_query {
+            DBOutput::Rows { types, rows } => (types, rows),
+            DBOutput::StatementComplete(_) => panic!("query path must return rows"),
+            _ => panic!("query path returned unexpected output variant"),
+        };
+        let (types_execute, rows_execute) = match via_execute {
+            DBOutput::Rows { types, rows } => (types, rows),
+            DBOutput::StatementComplete(_) => panic!("execute path must return rows"),
+            _ => panic!("execute path returned unexpected output variant"),
+        };
+
+        assert_eq!(types_query, types_execute);
+        assert_eq!(rows_query, rows_execute);
 
         Ok(())
     }

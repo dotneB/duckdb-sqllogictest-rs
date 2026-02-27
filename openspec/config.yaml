@@ -1,0 +1,6 @@
+schema: spec-driven
+
+context: |
+  Validation defaults:
+  - Run `just dev` compile, check formatting and test in debug mode.
+  - Run `just full` for release validation.
