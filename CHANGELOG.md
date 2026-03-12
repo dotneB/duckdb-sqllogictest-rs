@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.7](https://github.com/dotneB/duckdb-sqllogictest-rs/compare/v0.1.6...v0.1.7) - 2026-03-12
+
+### <!-- 0 -->⛰️ Features
+
+- add support for skipif and onlyif keywords
+- bump duckdb to 1.5.0
+
+### <!-- 2 -->🚜 Refactor
+
+- split main in more focused modules
+
+### <!-- 7 -->🤖 CI
+
+- bump toolchain to 1.94
+
 ## [0.1.6](https://github.com/dotneB/duckdb-sqllogictest-rs/compare/v0.1.5...v0.1.6) - 2026-01-27
 
 ### <!-- 0 -->⛰️ Features
