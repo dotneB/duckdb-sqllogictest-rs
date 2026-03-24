@@ -198,6 +198,7 @@ fn extensions_empty_spec_exits_1() {
 }
 
 #[test]
+#[ignore]
 fn extension_path_can_install_load_and_run_query() {
     // Local-only integration test: requires the built extension fixture.
     let Some(ext) = require_extension_fixture("quack") else {
@@ -260,6 +261,7 @@ fn require_does_not_break_failure_location_reporting() {
 }
 
 #[test]
+#[ignore]
 fn require_can_load_extension_by_name_after_install() {
     // Local-only integration test: requires the built extension fixture.
     let Some(ext) = require_extension_fixture("quack") else {
