@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.8](https://github.com/dotneB/duckdb-sqllogictest-rs/compare/v0.1.7...v0.1.8) - 2026-03-24
+
+### <!-- 0 -->⛰️ Features
+
+- bump duckdb to 1.5.1
+
+### <!-- 6 -->🧪 Testing
+
+- disable quack tests
+
 ## [0.1.7](https://github.com/dotneB/duckdb-sqllogictest-rs/compare/v0.1.6...v0.1.7) - 2026-03-12
 
 ### <!-- 0 -->⛰️ Features
