@@ -18,9 +18,9 @@ exclude = [
 
 [dependencies]
 anyhow = "1.0.100"
-arrow-schema = "57"
+arrow-schema = "58"
 clap = { version = "4.5.54", features = ["derive"] }
-duckdb = { version = "=1.10500.0", features = ["bundled"] }
+duckdb = { version = "=1.10501.0", features = ["bundled"] }
 glob = "0.3.3"
 sqllogictest = "0.29.1"
 
